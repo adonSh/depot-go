@@ -1,0 +1,14 @@
+_depot_completion() {
+  path="$XDG_CONFIG_HOME/depot/depot.db"
+  [[ -z $XDG_CONFIG_HOME ]] && path="$HOME/.depot/depot.db"
+  [[ -z $DEPOT_PATH ]] || path="$DEPOT_PATH"
+  keys="$(sqlite3 "$path" 'select key from storage')"
+
+  COMPREPLY=($(compgen -W "drop fetch help stow" -- "$2"))
+  [[ $3 =~ ^(fetch|drop)$ ]] && COMPREPLY=($(compgen -W "$keys" -- "$2"))
+
+  unset path
+  unset keys
+}
+
+complete -F _depot_completion depot
