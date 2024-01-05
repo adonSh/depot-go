@@ -108,6 +108,8 @@ func TestBadDecrypt(t *testing.T) {
 	if !errors.Is(err, ErrBadPassword) {
 		t.Errorf("Expected %v from Fetch() but the error was %v", ErrBadPassword, err)
 	}
+
+	t.Cleanup(func() { db.Drop(key) })
 }
 
 func TestBadKey(t *testing.T) {

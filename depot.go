@@ -43,78 +43,36 @@ func main() {
 	}
 
 	// Do the thing
-	var password []byte
-	var val string
 	switch action {
 	case actStow:
-		// Get value
-		fd := int(os.Stdin.Fd())
-		if term.IsTerminal(fd) && secret {
-			valbytes, err := term.ReadPassword(fd)
-			if err != nil {
-				log.Fatalf("Error: %v\n", err)
-			}
-			val = string(valbytes)
-		} else {
-			val, err = bufio.NewReader(os.Stdin).ReadString('\n')
-			if err != nil {
-				log.Fatalf("Error: %v\n", err)
-			}
+		val, err := getVal(secret)
+		if err != nil {
+			log.Fatalf("Error: %v\n", err)
 		}
 
-		// Get password if necessary
-		if secret {
-			if p := os.Getenv(envPass); p != "" {
-				password = []byte(p)
-			} else {
-				if !term.IsTerminal(fd) {
-					tty, err := os.Open("/dev/tty")
-					if err != nil {
-						log.Fatalf("Error: %v\n", err)
-					}
-					defer tty.Close()
-					fd = int(tty.Fd())
-				}
-
-				fmt.Print("PASSWORD: ")
-				password, err = term.ReadPassword(fd)
-				fmt.Println("")
-				if err != nil {
-					log.Fatalf("Error: %v\n", err)
-				}
-			}
+		password, err := getPassword(secret)
+		if err != nil {
+			log.Fatalf("Error: %v\n")
 		}
 
-		// Stow
 		err = storage.Stow(key, strings.TrimSpace(val), password)
 		if err != nil {
 			log.Fatalf("Error: %v\n", err)
 		}
 	case actFetch:
-		// Peek
 		val := storage.Peek(key)
-
-		// If Peek didn't work, get password
 		if val == "" {
-			if p := os.Getenv(envPass); p != "" {
-				password = []byte(p)
-			} else {
-				fmt.Print("PASSWORD: ")
-				password, err = term.ReadPassword(int(os.Stdin.Fd()))
-				fmt.Println("")
-				if err != nil {
-					log.Fatalf("Error: %v\n", err)
-				}
+			password, err := getPassword(true)
+			if err != nil {
+				log.Fatalf("Error: %v\n", err)
 			}
 
-			// Fetch
 			val, err = storage.Fetch(key, password)
 			if err != nil {
 				log.Fatalf("Error: %v\n", err)
 			}
 		}
 
-		// Print
 		if newline {
 			fmt.Println(val)
 		} else {
@@ -132,6 +90,8 @@ func main() {
 	}
 }
 
+// Returns the key, options, and action to perform specified in the
+// command-line arguments or an error if unsuccessful
 func parseArgs(args []string) (string, string, bool, bool, error) {
 	action := ""
 	key := ""
@@ -165,6 +125,8 @@ func parseArgs(args []string) (string, string, bool, bool, error) {
 	return action, key, secret, newline, nil
 }
 
+// Returns the location of the database in the filesystem depending on the
+// environment or an error if unsuccessful
 func choosePath() (string, error) {
 	path := os.Getenv(envPath)
 	if path != "" {
@@ -186,6 +148,47 @@ func choosePath() (string, error) {
 	return filepath.Join(path, "depot.db"), nil
 }
 
+// Returns the password from either an environment variable or console input.
+// If secret is false, returns nil. Returns an error if unsuccessful.
+func getPassword(secret bool) ([]byte, error) {
+	if !secret {
+		return nil, nil
+	}
+
+	if p := os.Getenv(envPass); p != "" {
+		return []byte(p), nil
+	}
+
+	tty, err := os.Create("/dev/tty")
+	if err != nil {
+		return nil, err
+	}
+	defer tty.Close()
+
+	fmt.Fprint(tty, "PASSWORD: ")
+	password, err := term.ReadPassword(int(tty.Fd()))
+	fmt.Fprintln(tty, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return password, nil
+}
+
+// Returns the value read from stdin or an error if unsuccessful
+func getVal(secret bool) (string, error) {
+	if term.IsTerminal(int(os.Stdin.Fd())) && secret {
+		val, err := term.ReadPassword(int(os.Stdin.Fd()))
+		if err != nil {
+			return "", err
+		}
+		return string(val), nil
+	}
+
+	return bufio.NewReader(os.Stdin).ReadString('\n')
+}
+
+// Returns the help message
 func usage() string {
 	return strings.Join([]string{
 		"Usage: depot [-nsh?] <action> <key>",

@@ -56,6 +56,8 @@ func NewDepot(uri string) (*Depot, error) {
 	return &db, nil
 }
 
+// Writes the schema to the database and returns nil if successful.
+// Otherwise returns an error
 func (db *Depot) init() error {
 	_, err := db.Exec(`
 		create table if not exists storage (
@@ -72,6 +74,8 @@ func (db *Depot) init() error {
 	return err
 }
 
+// Returns the given data encrypted with a key derived from the given
+// password or an error if unsuccessful
 func encrypt(password, salt, data []byte) ([]byte, []byte, error) {
 	encryptionKey := pbkdf2.Key(password, salt, 4096, 32, sha1.New)
 	block, err := aes.NewCipher(encryptionKey)
@@ -93,6 +97,8 @@ func encrypt(password, salt, data []byte) ([]byte, []byte, error) {
 	return aesgcm.Seal(nil, nonce, data, nil), nonce, nil
 }
 
+// Returns the given data decrypted with a key derived from the given
+// password or an error if unsuccessful
 func decrypt(password, salt, nonce, data []byte) ([]byte, error) {
 	encryptionKey := pbkdf2.Key(password, salt, 4096, 32, sha1.New)
 	block, err := aes.NewCipher(encryptionKey)
