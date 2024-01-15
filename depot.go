@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -52,15 +54,19 @@ func main() {
 
 		password, err := getPassword(secret)
 		if err != nil {
-			log.Fatalf("Error: %v\n")
+			log.Fatalf("Error: %v\n", err)
 		}
 
-		err = storage.Stow(key, strings.TrimSpace(val), password)
+		err = storage.Stow(key, val, password)
 		if err != nil {
 			log.Fatalf("Error: %v\n", err)
 		}
 	case actFetch:
-		val := storage.Peek(key)
+		val, err := storage.Peek(key)
+		if err != nil {
+			log.Fatalf("Error: %v\n", err)
+		}
+
 		if val == "" {
 			password, err := getPassword(true)
 			if err != nil {
@@ -99,7 +105,7 @@ func parseArgs(args []string) (string, string, bool, bool, error) {
 	newline := true
 
 	for _, a := range args {
-		if a == "-h" || a == "--help" || a == "-?" || a == actHelp {
+		if a == "-h" || a == "--help" || a == "-?" {
 			return actHelp, key, secret, newline, nil
 		}
 
@@ -107,6 +113,9 @@ func parseArgs(args []string) (string, string, bool, bool, error) {
 			secret = secret || strings.Contains(a, "s")
 			newline = !(!newline || strings.Contains(a, "n"))
 		} else if action == "" {
+			if a == actHelp {
+				return actHelp, key, secret, newline, nil
+			}
 			action = a
 		} else if key == "" {
 			key = a
@@ -182,10 +191,21 @@ func getVal(secret bool) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return string(val), nil
+		if strings.TrimSpace(string(val)) == "" {
+			return "", fmt.Errorf("value must be a non-empty string")
+		}
+		return strings.TrimSpace(string(val)), nil
 	}
 
-	return bufio.NewReader(os.Stdin).ReadString('\n')
+	val, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("could not read value from stdin")
+	}
+	if strings.TrimSpace(val) == "" {
+		return "", fmt.Errorf("value must be a non-empty string")
+	}
+
+	return strings.TrimSpace(val), nil
 }
 
 // Returns the help message

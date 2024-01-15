@@ -209,18 +209,21 @@ func (db *Depot) Drop(key string) error {
 // Tries to get a value quickly and easily. If the requested key is encrypted
 // or if any errors occur then an empty string is returned. Meant to be
 // followed by Fetch() if unsuccessful.
-func (db *Depot) Peek(key string) string {
+func (db *Depot) Peek(key string) (string, error) {
 	var data string
 	var nonce []byte
 
-	db.QueryRow(`
+	err := db.QueryRow(`
 		select val, nonce
 		from storage
 		where key = ?`,
 		key).Scan(&data, &nonce)
+	if err != nil {
+		return "", ErrNotFound
+	}
 
 	if nonce != nil {
-		return ""
+		return "", nil
 	}
-	return data
+	return data, nil
 }

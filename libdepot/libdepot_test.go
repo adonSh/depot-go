@@ -27,12 +27,16 @@ func TestPlain(t *testing.T) {
 	}
 
 	// Peek
-	if db.Peek(key) == "" {
+	val, err := db.Peek(key)
+	if err != nil {
+		t.Errorf("unexpected error in Peek(): %v", err)
+	}
+	if val == "" {
 		t.Errorf("expected to be able to Peek() at %v but it failed", key)
 	}
 
 	// Fetch
-	val, err := db.Fetch(key, nil)
+	val, err = db.Fetch(key, nil)
 	if err != nil {
 		t.Errorf("error fetching %v from database: %v", key, err.Error())
 	}
@@ -45,9 +49,11 @@ func TestPlain(t *testing.T) {
 	if err != nil {
 		t.Errorf("error deleting %v from database: %v", key, err.Error())
 	}
-	if pk := db.Peek(key); pk != "" {
-		t.Errorf("expected Peek(%v) to fail but it returned %v", key, pk)
+	_, err = db.Peek(key)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected Error: %v, but instead error was %v", ErrNotFound, err)
 	}
+
 	_, err = db.Fetch(key, nil)
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected Error: %v retrieving deleted data %v, but error was %v", ErrNotFound, key, err)
@@ -66,7 +72,11 @@ func TestCipher(t *testing.T) {
 	}
 
 	// Peek
-	if pk := db.Peek(key); pk != "" {
+	pk, err := db.Peek(key)
+	if err != nil {
+		t.Errorf("unexpected error in Peek(): %v", err)
+	}
+	if pk != "" {
 		t.Errorf("expected Peek(%v) to fail but it returned %v", key, pk)
 	}
 
@@ -84,8 +94,9 @@ func TestCipher(t *testing.T) {
 	if err != nil {
 		t.Errorf("error deleting %v from database: %v", key, err.Error())
 	}
-	if pk := db.Peek(key); pk != "" {
-		t.Errorf("expected Peek(%v) to fail but it returned %v", key, pk)
+	_, err = db.Peek(key)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected Error: %v, but instead error was %v", ErrNotFound, err)
 	}
 	_, err = db.Fetch(key, password)
 	if !errors.Is(err, ErrNotFound) {
