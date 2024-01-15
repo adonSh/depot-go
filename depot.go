@@ -62,12 +62,8 @@ func main() {
 			log.Fatalf("Error: %v\n", err)
 		}
 	case actFetch:
-		val, err := storage.Peek(key)
-		if err != nil {
-			log.Fatalf("Error: %v\n", err)
-		}
-
-		if val == "" {
+		val, err := storage.Fetch(key, nil)
+		if errors.Is(err, libdepot.ErrPasswordNeeded) {
 			password, err := getPassword(true)
 			if err != nil {
 				log.Fatalf("Error: %v\n", err)
@@ -77,6 +73,8 @@ func main() {
 			if err != nil {
 				log.Fatalf("Error: %v\n", err)
 			}
+		} else if err != nil {
+			log.Fatalf("Error: %v\n", err)
 		}
 
 		if newline {

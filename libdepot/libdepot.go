@@ -24,8 +24,9 @@ type Depot struct {
 var (
 	b64 = base64.StdEncoding
 
-	ErrNotFound    = errors.New("key not found")
-	ErrBadPassword = errors.New("bad password")
+	ErrNotFound       = errors.New("key not found")
+	ErrBadPassword    = errors.New("bad password")
+	ErrPasswordNeeded = errors.New("password is needed for decryption")
 )
 
 // Returns a new storage medium (sqlite3 database) or an error if
@@ -43,8 +44,7 @@ func NewDepot(uri string) (*Depot, error) {
 				return nil, fmt.Errorf("cannot access database: %w", err)
 			}
 		}
-		_, err = io.ReadFull(rand.Reader, db.salt)
-		if err != nil {
+		if _, err = io.ReadFull(rand.Reader, db.salt); err != nil {
 			return nil, fmt.Errorf("cannot generate random salt: %w", err)
 		}
 		_, err = db.Exec("insert into salt (data) values (?)", db.salt)
@@ -84,8 +84,7 @@ func encrypt(password, salt, data []byte) ([]byte, []byte, error) {
 	}
 
 	nonce := make([]byte, 12)
-	_, err = io.ReadFull(rand.Reader, nonce)
-	if err != nil {
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, nil, err
 	}
 
@@ -123,17 +122,17 @@ func decrypt(password, salt, nonce, data []byte) ([]byte, error) {
 // the value is updated. If password is not nil the value will be encrypted.
 // Returns an error if encryption or storage fails.
 func (db *Depot) Stow(key, val string, password []byte) error {
+	query := `
+		insert into storage (key, val, nonce)
+		values (?, ?, ?)
+		on conflict (key) do
+		update set
+			modified = (strftime('%s', 'now')),
+			val = ?,
+			nonce = ?`
+
 	if password == nil {
-		_, err := db.Exec(`
-			insert into storage (key, val, nonce)
-			values (?, ?, ?)
-			on conflict (key) do
-			update set
-				modified=(strftime('%s', 'now')),
-				val=?,
-				nonce=?`,
-			key, val, nil, val, nil)
-		if err != nil {
+		if _, err := db.Exec(query, key, val, nil, val, nil); err != nil {
 			return fmt.Errorf("cannot access database: %w", err)
 		}
 
@@ -146,16 +145,7 @@ func (db *Depot) Stow(key, val string, password []byte) error {
 	}
 
 	cval := b64.EncodeToString(ciphertext)
-	_, err = db.Exec(`
-		insert into storage (key, val, nonce)
-		values (?, ?, ?)
-		on conflict (key) do
-		update set
-			modified=(strftime('%s', 'now')),
-			val=?,
-			nonce=?`,
-		key, cval, nonce, cval, nonce)
-	if err != nil {
+	if _, err = db.Exec(query, key, cval, nonce, cval, nonce); err != nil {
 		return fmt.Errorf("cannot access database: %w", err)
 	}
 
@@ -173,15 +163,16 @@ func (db *Depot) Fetch(key string, password []byte) (string, error) {
 		from storage
 		where key = ?`,
 		key).Scan(&val, &nonce)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", ErrNotFound
-		}
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	} else if err != nil {
 		return "", fmt.Errorf("cannot access database: %w", err)
 	}
 
 	if nonce == nil {
 		return val, nil
+	} else if password == nil {
+		return "", ErrPasswordNeeded
 	}
 
 	valbytes, err := b64.DecodeString(val)
@@ -204,26 +195,4 @@ func (db *Depot) Drop(key string) error {
 	}
 
 	return nil
-}
-
-// Tries to get a value quickly and easily. If the requested key is encrypted
-// or if any errors occur then an empty string is returned. Meant to be
-// followed by Fetch() if unsuccessful.
-func (db *Depot) Peek(key string) (string, error) {
-	var data string
-	var nonce []byte
-
-	err := db.QueryRow(`
-		select val, nonce
-		from storage
-		where key = ?`,
-		key).Scan(&data, &nonce)
-	if err != nil {
-		return "", ErrNotFound
-	}
-
-	if nonce != nil {
-		return "", nil
-	}
-	return data, nil
 }
